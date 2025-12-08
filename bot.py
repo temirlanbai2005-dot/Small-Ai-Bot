@@ -18,7 +18,7 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 # Настройка Gemini
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-pro')
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 # Создаем главное меню
 def get_main_keyboard():
