@@ -13,16 +13,10 @@ aiohttp==3.9.1
 # Парсинг
 beautifulsoup4==4.12.3
 lxml==5.1.0
-selenium==4.18.1
 requests==2.31.0
 
-# Социальные сети API
+# Социальные сети API (базовые)
 tweepy==4.14.0
-google-api-python-client==2.116.0
-google-auth-httplib2==0.2.0
-google-auth-oauthlib==1.2.0
-instagrapi==2.1.0
-pinterest-api==0.4.0
 
 # Переводчик
 deep-translator==1.11.4
@@ -33,7 +27,28 @@ pytz==2024.1
 
 # Утилиты
 python-dotenv==1.0.0
-pillow==10.2.0
 
 # Дата и время
 python-dateutil==2.8.2
+
+# ============================================
+# ОПЦИОНАЛЬНЫЕ ЗАВИСИМОСТИ
+# (раскомментируй если нужны)
+# ============================================
+
+# YouTube API
+# google-api-python-client==2.116.0
+# google-auth-httplib2==0.2.0
+# google-auth-oauthlib==1.2.0
+
+# Instagram (неофициальное API)
+# instagrapi==2.2.1
+
+# Selenium для сложного парсинга
+# selenium==4.18.1
+
+# Pinterest API
+# pinterest-api==0.4.0
+
+# Работа с изображениями
+# pillow==10.2.0
