@@ -70,6 +70,7 @@ async def init_db():
             ''')
             
         logger.info("✅ Таблицы созданы/проверены!")
+        logger.info("🚀 Бот запущен с PostgreSQL!")
     except Exception as e:
         logger.error(f"❌ Ошибка подключения к БД: {e}")
 
@@ -451,12 +452,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Update {update} caused error {context.error}")
 
-async def main():
-    # Инициализируем базу данных
+async def post_init(application: Application):
+    """Вызывается после инициализации приложения"""
     await init_db()
-    
+
+def main():
     # Создаем приложение
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    application = Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
     
     # Добавляем обработчики команд
     application.add_handler(CommandHandler("start", start))
@@ -478,9 +480,8 @@ async def main():
     application.add_error_handler(error_handler)
     
     # Запускаем бота
-    logger.info("🚀 Бот запущен с PostgreSQL!")
-    await application.run_polling(allowed_updates=Update.ALL_TYPES)
+    logger.info("🤖 Запуск бота...")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
+    main()
