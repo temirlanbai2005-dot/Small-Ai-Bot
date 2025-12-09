@@ -78,6 +78,9 @@ async def init_db():
 
 # Обновление статистики пользователя
 async def update_user_stats(user_id: int, username: str, first_name: str):
+    if db_pool is None:
+        logger.warning("База данных ещё не инициализирована")
+        return
     try:
         async with db_pool.acquire() as conn:
             await conn.execute('''
@@ -158,6 +161,10 @@ async def add_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Использование: /note <текст заметки>")
         return
     
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных недоступна. Попробуйте через минуту.")
+        return
+    
     note_text = ' '.join(context.args)
     
     try:
@@ -175,6 +182,10 @@ async def add_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await update_user_stats(user.id, user.username or "", user.first_name or "")
+    
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных недоступна. Попробуйте через минуту.")
+        return
     
     try:
         async with db_pool.acquire() as conn:
@@ -207,6 +218,10 @@ async def delete_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Использование: /delnote <номер заметки>")
         return
     
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных недоступна. Попробуйте через минуту.")
+        return
+    
     try:
         note_id = int(context.args[0])
         async with db_pool.acquire() as conn:
@@ -234,6 +249,10 @@ async def add_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Использование: /task <описание задачи>")
         return
     
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных недоступна. Попробуйте через минуту.")
+        return
+    
     task_text = ' '.join(context.args)
     
     try:
@@ -251,6 +270,10 @@ async def add_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await update_user_stats(user.id, user.username or "", user.first_name or "")
+    
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных недоступна. Попробуйте через минуту.")
+        return
     
     try:
         async with db_pool.acquire() as conn:
@@ -294,6 +317,10 @@ async def complete_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Использование: /complete <номер задачи>")
         return
     
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных недоступна. Попробуйте через минуту.")
+        return
+    
     try:
         task_id = int(context.args[0])
         async with db_pool.acquire() as conn:
@@ -321,6 +348,10 @@ async def delete_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Использование: /deltask <номер задачи>")
         return
     
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных недоступна. Попробуйте через минуту.")
+        return
+    
     try:
         task_id = int(context.args[0])
         async with db_pool.acquire() as conn:
@@ -343,6 +374,10 @@ async def delete_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await update_user_stats(user.id, user.username or "", user.first_name or "")
+    
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных недоступна. Попробуйте через минуту.")
+        return
     
     try:
         async with db_pool.acquire() as conn:
@@ -369,6 +404,10 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             
             tasks_active = tasks_total - tasks_completed
+        
+        if stats is None:
+            await update.message.reply_text("📊 Статистика пока не собрана. Напишите ещё несколько сообщений!")
+            return
         
         stats_text = f"""
 📊 Твоя статистика:
