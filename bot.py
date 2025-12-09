@@ -21,7 +21,7 @@ DATABASE_URL = os.getenv('DATABASE_URL')
 
 # Настройка Gemini
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 # Глобальный пул соединений с БД
 db_pool = None
