@@ -36,8 +36,6 @@ if not DATABASE_URL:
     logger.error("❌ DATABASE_URL не установлен!")
     exit(1)
 
-logger.info(f"📊 DATABASE_URL: {DATABASE_URL[:50]}...")
-
 # Импорты модулей проекта
 from database.db import init_db, close_db
 from handlers.basic import start, help_command
@@ -57,16 +55,14 @@ from handlers.notifications import notification_settings, toggle_notification
 from handlers.messages import handle_message
 
 # Глобальные переменные
-app = None
-scheduler = None
+application = None
 
 async def error_handler(update: Update, context):
     """Обработчик ошибок"""
-    logger.error(f"Update {update} caused error {context.error}")
+    logger.error(f"Ошибка: {context.error}")
 
-async def post_init(application: Application):
+async def post_init(app: Application):
     """Инициализация после запуска"""
-    global scheduler
     logger.info("🔧 Инициализация бота...")
     
     # Инициализация базы данных
@@ -74,21 +70,13 @@ async def post_init(application: Application):
         await init_db()
         logger.info("✅ База данных подключена!")
     except Exception as e:
-        logger.error(f"❌ Ошибка подключения к БД: {e}")
+        logger.error(f"❌ Ошибка БД: {e}")
     
-    # Запуск планировщика уведомлений
-    try:
-        from services.schedulers.notifications import setup_scheduler
-        scheduler = await setup_scheduler(application.bot)
-        logger.info("✅ Планировщик уведомлений запущен!")
-    except Exception as e:
-        logger.error(f"⚠️ Планировщик не запущен: {e}")
-    
-    logger.info("✅ Бот полностью инициализирован!")
+    logger.info("✅ Бот инициализирован!")
 
 # Health check
 async def health_check(request):
-    return web.Response(text="✅ Bot is running! 🤖", status=200)
+    return web.Response(text="✅ Bot is running!", status=200)
 
 async def run_web_server():
     """Запуск веб-сервера"""
@@ -101,94 +89,80 @@ async def run_web_server():
     site = web.TCPSite(runner, '0.0.0.0', PORT)
     await site.start()
     logger.info(f"🌐 Веб-сервер запущен на порту {PORT}")
+    return runner
 
-async def run_bot():
-    """Запуск Telegram бота"""
-    global app
+async def main():
+    """Главная функция"""
+    global application
     
-    app = (
+    # Запускаем веб-сервер
+    web_runner = await run_web_server()
+    
+    # Создаём приложение бота
+    application = (
         Application.builder()
         .token(TELEGRAM_TOKEN)
         .post_init(post_init)
         .build()
     )
     
-    # Базовые команды
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
+    # Регистрация обработчиков
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
     
-    # Заметки
-    app.add_handler(CommandHandler("note", add_note))
-    app.add_handler(CommandHandler("notes", show_notes))
-    app.add_handler(CommandHandler("delnote", delete_note))
+    application.add_handler(CommandHandler("note", add_note))
+    application.add_handler(CommandHandler("notes", show_notes))
+    application.add_handler(CommandHandler("delnote", delete_note))
     
-    # Задачи
-    app.add_handler(CommandHandler("task", add_task))
-    app.add_handler(CommandHandler("tasks", show_tasks))
-    app.add_handler(CommandHandler("complete", complete_task))
-    app.add_handler(CommandHandler("deltask", delete_task))
+    application.add_handler(CommandHandler("task", add_task))
+    application.add_handler(CommandHandler("tasks", show_tasks))
+    application.add_handler(CommandHandler("complete", complete_task))
+    application.add_handler(CommandHandler("deltask", delete_task))
     
-    # AI
-    app.add_handler(CommandHandler("ask", ask_ai))
+    application.add_handler(CommandHandler("ask", ask_ai))
+    application.add_handler(CommandHandler("stats", show_stats))
     
-    # Статистика
-    app.add_handler(CommandHandler("stats", show_stats))
+    application.add_handler(CommandHandler("trends", show_trends))
+    application.add_handler(CommandHandler("trendsnotify", toggle_trends_notifications))
     
-    # Тренды
-    app.add_handler(CommandHandler("trends", show_trends))
-    app.add_handler(CommandHandler("trendsnotify", toggle_trends_notifications))
+    application.add_handler(CommandHandler("contentplan", create_content_plan))
+    application.add_handler(CommandHandler("schedule", schedule_post))
+    application.add_handler(CommandHandler("scheduled", view_scheduled_posts))
+    application.add_handler(CommandHandler("editpost", edit_scheduled_post))
+    application.add_handler(CommandHandler("delpost", delete_scheduled_post))
     
-    # Контент-план
-    app.add_handler(CommandHandler("contentplan", create_content_plan))
-    app.add_handler(CommandHandler("schedule", schedule_post))
-    app.add_handler(CommandHandler("scheduled", view_scheduled_posts))
-    app.add_handler(CommandHandler("editpost", edit_scheduled_post))
-    app.add_handler(CommandHandler("delpost", delete_scheduled_post))
+    application.add_handler(CommandHandler("notifications", notification_settings))
+    application.add_handler(CommandHandler("togglenotif", toggle_notification))
     
-    # Уведомления
-    app.add_handler(CommandHandler("notifications", notification_settings))
-    app.add_handler(CommandHandler("togglenotif", toggle_notification))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # Текстовые сообщения
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_error_handler(error_handler)
     
-    # Ошибки
-    app.add_error_handler(error_handler)
+    # Запуск бота через run_polling (правильный способ)
+    logger.info("🤖 Запуск бота...")
     
-    logger.info("🤖 Запуск Telegram бота...")
-    
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling(
-        allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True
-    )
-    
-    logger.info("✅ Бот успешно запущен и работает!")
-
-async def main():
-    """Главная функция"""
-    await run_web_server()
-    await run_bot()
-    
-    try:
+    async with application:
+        await application.start()
+        await application.updater.start_polling(drop_pending_updates=True)
+        
+        logger.info("✅ Бот успешно запущен!")
+        
+        # Запускаем планировщик ПОСЛЕ запуска бота
+        try:
+            from services.schedulers.notifications import setup_scheduler
+            scheduler = await setup_scheduler(application.bot)
+            logger.info("✅ Планировщик запущен!")
+        except Exception as e:
+            logger.warning(f"⚠️ Планировщик не запущен: {e}")
+        
+        # Держим бота запущенным
         while True:
             await asyncio.sleep(3600)
-    except asyncio.CancelledError:
-        pass
-    finally:
-        if scheduler:
-            scheduler.shutdown()
-        if app:
-            await app.stop()
-            await app.shutdown()
-        await close_db()
-        logger.info("👋 Бот остановлен")
 
 if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("⚠️ Остановка")
+        logger.info("👋 Бот остановлен")
     except Exception as e:
         logger.error(f"❌ Критическая ошибка: {e}")
