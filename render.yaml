@@ -3,12 +3,79 @@ services:
     name: telegram-bot-3d-artist
     env: python
     runtime: python-3.12
-    buildCommand: pip install -r requirements.txt
+    
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: python bot.py
+    
+    # Авто-деплой при пуше в main
+    autoDeploy: true
+    
+    # Переменные окружения
     envVars:
+      # Telegram
       - key: TELEGRAM_TOKEN
         sync: false
+      
+      # Google Gemini AI
       - key: GEMINI_API_KEY
         sync: false
+      
+      # База данных PostgreSQL
       - key: DATABASE_URL
         sync: false
+      
+      # Twitter/X API
+      - key: TWITTER_API_KEY
+        sync: false
+      - key: TWITTER_API_SECRET
+        sync: false
+      - key: TWITTER_ACCESS_TOKEN
+        sync: false
+      - key: TWITTER_ACCESS_SECRET
+        sync: false
+      
+      # YouTube API
+      - key: YOUTUBE_CLIENT_ID
+        sync: false
+      - key: YOUTUBE_CLIENT_SECRET
+        sync: false
+      
+      # LinkedIn API
+      - key: LINKEDIN_CLIENT_ID
+        sync: false
+      - key: LINKEDIN_CLIENT_SECRET
+        sync: false
+      
+      # Pinterest API
+      - key: PINTEREST_ACCESS_TOKEN
+        sync: false
+      
+      # Instagram/Threads
+      - key: INSTAGRAM_USERNAME
+        sync: false
+      - key: INSTAGRAM_PASSWORD
+        sync: false
+      
+      # TikTok API
+      - key: TIKTOK_CLIENT_KEY
+        sync: false
+      - key: TIKTOK_CLIENT_SECRET
+        sync: false
+      
+      # Telegram Channel (для постинга)
+      - key: TELEGRAM_CHANNEL_ID
+        sync: false
+      
+      # Порт (Render автоматически назначит)
+      - key: PORT
+        value: 10000
+      
+      # Часовой пояс
+      - key: TZ
+        value: Europe/Moscow
+
+# База данных PostgreSQL
+databases:
+  - name: telegram-bot-db
+    databaseName: botdb
+    user: botuser
