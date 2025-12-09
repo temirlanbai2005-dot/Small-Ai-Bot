@@ -6,6 +6,8 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import google.generativeai as genai
 import asyncpg
 from contextlib import asynccontextmanager
+from aiohttp import web
+import asyncio
 
 # Настройка логирования
 logging.basicConfig(
@@ -456,7 +458,25 @@ async def post_init(application: Application):
     """Вызывается после инициализации приложения"""
     await init_db()
 
-def main():
+async def health_check(request):
+    """Простой эндпоинт для проверки здоровья сервиса"""
+    return web.Response(text="Bot is running! 🤖✅")
+
+async def start_web_server():
+    """Запускает веб-сервер для Render"""
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    
+    port = int(os.getenv('PORT', 10000))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    logger.info(f"🌐 Веб-сервер запущен на порту {port}")
+
+async def run_bot():
+    """Запускает Telegram бота"""
     # Создаем приложение
     application = Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
     
@@ -481,7 +501,22 @@ def main():
     
     # Запускаем бота
     logger.info("🤖 Запуск бота...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+    
+    # Держим бота запущенным
+    while True:
+        await asyncio.sleep(1)
+
+def main():
+    """Главная функция - запускает и веб-сервер, и бота"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    # Запускаем оба сервиса одновременно
+    loop.run_until_complete(start_web_server())
+    loop.run_until_complete(run_bot())
 
 if __name__ == '__main__':
     main()
