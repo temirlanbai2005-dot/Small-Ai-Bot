@@ -10,14 +10,14 @@ from aiohttp import web
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
-# Настройка базового логирования (до импорта других модулей)
+# Настройка логирования
 logging.basicConfig(
     format='%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Получаем переменные окружения напрямую
+# Получаем переменные окружения
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 DATABASE_URL = os.getenv('DATABASE_URL')
@@ -36,6 +36,8 @@ if not DATABASE_URL:
     logger.error("❌ DATABASE_URL не установлен!")
     exit(1)
 
+logger.info(f"📊 DATABASE_URL: {DATABASE_URL[:50]}...")
+
 # Импорты модулей проекта
 from database.db import init_db, close_db
 from handlers.basic import start, help_command
@@ -53,10 +55,10 @@ from handlers.content_plan import (
 )
 from handlers.notifications import notification_settings, toggle_notification
 from handlers.messages import handle_message
-from utils.keyboards import get_main_keyboard
 
-# Глобальная переменная для application
+# Глобальные переменные
 app = None
+scheduler = None
 
 async def error_handler(update: Update, context):
     """Обработчик ошибок"""
@@ -64,25 +66,37 @@ async def error_handler(update: Update, context):
 
 async def post_init(application: Application):
     """Инициализация после запуска"""
+    global scheduler
     logger.info("🔧 Инициализация бота...")
     
     # Инициализация базы данных
-    await init_db()
+    try:
+        await init_db()
+        logger.info("✅ База данных подключена!")
+    except Exception as e:
+        logger.error(f"❌ Ошибка подключения к БД: {e}")
+    
+    # Запуск планировщика уведомлений
+    try:
+        from services.schedulers.notifications import setup_scheduler
+        scheduler = await setup_scheduler(application.bot)
+        logger.info("✅ Планировщик уведомлений запущен!")
+    except Exception as e:
+        logger.error(f"⚠️ Планировщик не запущен: {e}")
     
     logger.info("✅ Бот полностью инициализирован!")
 
-# Health check для Render
+# Health check
 async def health_check(request):
-    """Эндпоинт для проверки здоровья"""
     return web.Response(text="✅ Bot is running! 🤖", status=200)
 
 async def run_web_server():
     """Запуск веб-сервера"""
-    app = web.Application()
-    app.router.add_get('/', health_check)
-    app.router.add_get('/health', health_check)
+    web_app = web.Application()
+    web_app.router.add_get('/', health_check)
+    web_app.router.add_get('/health', health_check)
     
-    runner = web.AppRunner(app)
+    runner = web.AppRunner(web_app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', PORT)
     await site.start()
@@ -92,7 +106,6 @@ async def run_bot():
     """Запуск Telegram бота"""
     global app
     
-    # Создание приложения
     app = (
         Application.builder()
         .token(TELEGRAM_TOKEN)
@@ -100,49 +113,48 @@ async def run_bot():
         .build()
     )
     
-    # ========== БАЗОВЫЕ КОМАНДЫ ==========
+    # Базовые команды
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     
-    # ========== ЗАМЕТКИ ==========
+    # Заметки
     app.add_handler(CommandHandler("note", add_note))
     app.add_handler(CommandHandler("notes", show_notes))
     app.add_handler(CommandHandler("delnote", delete_note))
     
-    # ========== ЗАДАЧИ ==========
+    # Задачи
     app.add_handler(CommandHandler("task", add_task))
     app.add_handler(CommandHandler("tasks", show_tasks))
     app.add_handler(CommandHandler("complete", complete_task))
     app.add_handler(CommandHandler("deltask", delete_task))
     
-    # ========== AI ==========
+    # AI
     app.add_handler(CommandHandler("ask", ask_ai))
     
-    # ========== СТАТИСТИКА ==========
+    # Статистика
     app.add_handler(CommandHandler("stats", show_stats))
     
-    # ========== ТРЕНДЫ ==========
+    # Тренды
     app.add_handler(CommandHandler("trends", show_trends))
     app.add_handler(CommandHandler("trendsnotify", toggle_trends_notifications))
     
-    # ========== КОНТЕНТ-ПЛАН ==========
+    # Контент-план
     app.add_handler(CommandHandler("contentplan", create_content_plan))
     app.add_handler(CommandHandler("schedule", schedule_post))
     app.add_handler(CommandHandler("scheduled", view_scheduled_posts))
     app.add_handler(CommandHandler("editpost", edit_scheduled_post))
     app.add_handler(CommandHandler("delpost", delete_scheduled_post))
     
-    # ========== УВЕДОМЛЕНИЯ ==========
+    # Уведомления
     app.add_handler(CommandHandler("notifications", notification_settings))
     app.add_handler(CommandHandler("togglenotif", toggle_notification))
     
-    # ========== ОБРАБОТКА ТЕКСТА ==========
+    # Текстовые сообщения
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # ========== ОБРАБОТЧИК ОШИБОК ==========
+    # Ошибки
     app.add_error_handler(error_handler)
     
-    # Запуск бота
     logger.info("🤖 Запуск Telegram бота...")
     
     await app.initialize()
@@ -156,19 +168,17 @@ async def run_bot():
 
 async def main():
     """Главная функция"""
-    # Запускаем веб-сервер
     await run_web_server()
-    
-    # Запускаем бота
     await run_bot()
     
-    # Держим приложение запущенным
     try:
         while True:
-            await asyncio.sleep(3600)  # Спим 1 час
+            await asyncio.sleep(3600)
     except asyncio.CancelledError:
-        logger.info("⚠️ Получен сигнал остановки")
+        pass
     finally:
+        if scheduler:
+            scheduler.shutdown()
         if app:
             await app.stop()
             await app.shutdown()
@@ -179,6 +189,6 @@ if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("⚠️ Остановка по Ctrl+C")
+        logger.info("⚠️ Остановка")
     except Exception as e:
         logger.error(f"❌ Критическая ошибка: {e}")
