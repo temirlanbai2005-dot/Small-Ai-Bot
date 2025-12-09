@@ -1,10 +1,18 @@
 """
-Планировщики автоматических задач
+Планировщики автоматических задач (упрощенная версия)
 """
 
-from .notifications import start_notification_scheduler
-from .trends import start_trends_scheduler
-from .auto_posting import start_autoposting_scheduler
+async def start_notification_scheduler(application):
+    """Заглушка - будет добавлено позже"""
+    pass
+
+async def start_trends_scheduler(application):
+    """Заглушка - будет добавлено позже"""
+    pass
+
+async def start_autoposting_scheduler(application):
+    """Заглушка - будет добавлено позже"""
+    pass
 
 __all__ = [
     'start_notification_scheduler',
