@@ -1,119 +1,196 @@
 """
-Обработчики настроек уведомлений
+Планировщик уведомлений
 """
 
 import logging
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import ContextTypes
-from database.db import get_db_pool, update_user_stats
+import pytz
+from datetime import datetime
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+from database.db import get_db_pool
+from services.gemini_ai import generate_motivation, generate_project_idea
 
 logger = logging.getLogger(__name__)
 
-async def notification_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать настройки уведомлений: /notifications"""
-    user = update.effective_user
-    await update_user_stats(user.id, user.username, user.first_name)
-    
-    db_pool = get_db_pool()
-    if not db_pool:
-        await update.message.reply_text("❌ База данных недоступна.")
-        return
-    
-    try:
-        async with db_pool.acquire() as conn:
-            # Получаем или создаем настройки
-            settings = await conn.fetchrow(
-                'SELECT * FROM notification_settings WHERE user_id = $1',
-                user.id
-            )
-            
-            if not settings:
-                await conn.execute(
-                    'INSERT INTO notification_settings (user_id) VALUES ($1)',
-                    user.id
-                )
-                settings = await conn.fetchrow(
-                    'SELECT * FROM notification_settings WHERE user_id = $1',
-                    user.id
-                )
-        
-        def status_emoji(enabled):
-            return "✅" if enabled else "❌"
-        
-        message = "⏰ **Настройки уведомлений**\n\n"
-        message += f"{status_emoji(settings['motivation'])} **08:00** — Мотивация дня + арт\n"
-        message += f"{status_emoji(settings['idea'])} **09:00** — Идея для проекта\n"
-        message += f"{status_emoji(settings['trends'])} **10:00** — Тренды + музыка\n"
-        message += f"{status_emoji(settings['jobs'])} **11:00** — Вакансии и фриланс\n"
-        message += f"{status_emoji(settings['assets'])} **12:00** — Топ ассетов\n"
-        message += f"{status_emoji(settings['reminders'])} **Каждые 2 часа** — Напоминания\n\n"
-        
-        message += "💡 **Переключить:**\n"
-        message += "`/togglenotif motivation` — мотивация\n"
-        message += "`/togglenotif idea` — идеи\n"
-        message += "`/togglenotif trends` — тренды\n"
-        message += "`/togglenotif jobs` — вакансии\n"
-        message += "`/togglenotif assets` — ассеты\n"
-        message += "`/togglenotif reminders` — напоминания"
-        
-        await update.message.reply_text(message, parse_mode='Markdown')
-        
-    except Exception as e:
-        logger.error(f"Ошибка получения настроек: {e}")
-        await update.message.reply_text("❌ Ошибка получения настроек")
+TIMEZONE = pytz.timezone('Europe/Moscow')
 
-async def toggle_notification(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Переключить уведомление: /togglenotif <тип>"""
-    user = update.effective_user
-    await update_user_stats(user.id, user.username, user.first_name)
-    
-    if not context.args:
-        await update.message.reply_text(
-            "❌ Использование: `/togglenotif <тип>`\n\n"
-            "Типы: motivation, idea, trends, jobs, assets, reminders",
-            parse_mode='Markdown'
-        )
+# Глобальный бот (будет установлен при setup)
+_bot = None
+
+async def send_motivation():
+    """08:00 - Мотивация дня"""
+    if not _bot:
         return
     
-    notif_type = context.args[0].lower()
-    valid_types = ['motivation', 'idea', 'trends', 'jobs', 'assets', 'reminders']
-    
-    if notif_type not in valid_types:
-        await update.message.reply_text(
-            f"❌ Неверный тип уведомления: {notif_type}\n\n"
-            f"Доступные: {', '.join(valid_types)}",
-            parse_mode='Markdown'
-        )
-        return
+    logger.info("📨 Отправка мотивации...")
     
     db_pool = get_db_pool()
     if not db_pool:
-        await update.message.reply_text("❌ База данных недоступна.")
         return
     
     try:
         async with db_pool.acquire() as conn:
-            # Переключаем состояние
-            query = f"UPDATE notification_settings SET {notif_type} = NOT {notif_type} WHERE user_id = $1 RETURNING {notif_type}"
-            new_state = await conn.fetchval(query, user.id)
+            users = await conn.fetch(
+                'SELECT user_id FROM notification_settings WHERE motivation = TRUE'
+            )
         
-        status = "включены ✅" if new_state else "выключены ❌"
+        if not users:
+            logger.info("Нет пользователей для мотивации")
+            return
         
-        notif_names = {
-            'motivation': 'Мотивация дня',
-            'idea': 'Идеи для проектов',
-            'trends': 'Тренды',
-            'jobs': 'Вакансии',
-            'assets': 'Топ ассетов',
-            'reminders': 'Напоминания',
-        }
+        motivation = await generate_motivation()
+        message = f"🌅 **Доброе утро!**\n\n{motivation}\n\n🚀 Отличного дня!"
         
-        await update.message.reply_text(
-            f"✅ **{notif_names[notif_type]}** {status}\n\n"
-            f"Все настройки: /notifications",
-            parse_mode='Markdown'
-        )
+        sent = 0
+        for user in users:
+            try:
+                await _bot.send_message(
+                    chat_id=user['user_id'],
+                    text=message,
+                    parse_mode='Markdown'
+                )
+                sent += 1
+            except Exception as e:
+                logger.warning(f"Не удалось отправить {user['user_id']}: {e}")
         
+        logger.info(f"✅ Мотивация: {sent}/{len(users)}")
+    
     except Exception as e:
-        logger.error(f"Ошибка переключения уведомления: {e}")
-        await update.message.reply_text("❌ Ошибка изменения настроек")
+        logger.error(f"Ошибка мотивации: {e}")
+
+async def send_idea():
+    """09:00 - Идея дня"""
+    if not _bot:
+        return
+    
+    logger.info("📨 Отправка идеи...")
+    
+    db_pool = get_db_pool()
+    if not db_pool:
+        return
+    
+    try:
+        async with db_pool.acquire() as conn:
+            users = await conn.fetch(
+                'SELECT user_id FROM notification_settings WHERE idea = TRUE'
+            )
+        
+        if not users:
+            return
+        
+        idea = await generate_project_idea()
+        message = f"💡 **Идея дня:**\n\n{idea}\n\n🎨 Начни создавать!"
+        
+        sent = 0
+        for user in users:
+            try:
+                await _bot.send_message(
+                    chat_id=user['user_id'],
+                    text=message,
+                    parse_mode='Markdown'
+                )
+                sent += 1
+            except:
+                pass
+        
+        logger.info(f"✅ Идеи: {sent}/{len(users)}")
+    
+    except Exception as e:
+        logger.error(f"Ошибка идей: {e}")
+
+async def send_reminder():
+    """Каждые 2 часа - напоминания"""
+    if not _bot:
+        return
+    
+    logger.info("📨 Отправка напоминаний...")
+    
+    db_pool = get_db_pool()
+    if not db_pool:
+        return
+    
+    try:
+        async with db_pool.acquire() as conn:
+            users = await conn.fetch(
+                'SELECT user_id FROM notification_settings WHERE reminders = TRUE'
+            )
+        
+        if not users:
+            return
+        
+        reminders = [
+            "💧 Попей воды!",
+            "🧘 Время размяться!",
+            "👀 Дай глазам отдохнуть",
+            "💾 Сделай бэкап проекта!",
+            "☕ Время для перерыва",
+        ]
+        
+        hour = datetime.now(TIMEZONE).hour
+        reminder = reminders[hour % len(reminders)]
+        message = f"⏰ {reminder}\n\n💪 Твоё здоровье важнее дедлайнов!"
+        
+        sent = 0
+        for user in users:
+            try:
+                await _bot.send_message(
+                    chat_id=user['user_id'],
+                    text=message,
+                    parse_mode='Markdown'
+                )
+                sent += 1
+            except:
+                pass
+        
+        logger.info(f"✅ Напоминания: {sent}/{len(users)}")
+    
+    except Exception as e:
+        logger.error(f"Ошибка напоминаний: {e}")
+
+def run_async(coro):
+    """Запуск корутины из синхронного контекста"""
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+        return loop.create_task(coro)
+    except RuntimeError:
+        return asyncio.run(coro)
+
+async def setup_scheduler(bot):
+    """Настройка планировщика"""
+    global _bot
+    _bot = bot
+    
+    scheduler = AsyncIOScheduler(timezone=TIMEZONE)
+    
+    # 08:00 - Мотивация
+    scheduler.add_job(
+        lambda: run_async(send_motivation()),
+        'cron',
+        hour=8,
+        minute=0,
+        id='motivation'
+    )
+    
+    # 09:00 - Идея
+    scheduler.add_job(
+        lambda: run_async(send_idea()),
+        'cron',
+        hour=9,
+        minute=0,
+        id='idea'
+    )
+    
+    # Каждые 2 часа 10:00-20:00 - напоминания
+    scheduler.add_job(
+        lambda: run_async(send_reminder()),
+        'cron',
+        hour='10,12,14,16,18,20',
+        minute=0,
+        id='reminders'
+    )
+    
+    scheduler.start()
+    logger.info("📅 Планировщик настроен: 08:00, 09:00, каждые 2ч")
+    
+    return scheduler
