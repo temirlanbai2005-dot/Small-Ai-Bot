@@ -1,7 +1,7 @@
 """
-Планировщики
+Планировщики - временно отключены
 """
 
-from .notifications import setup_scheduler
-
-__all__ = ['setup_scheduler']
+async def setup_scheduler(bot):
+    """Заглушка"""
+    pass
